@@ -77,12 +77,29 @@ if not os.path.exists(KUBE_FILEPATH):
 
 
 #podDeletePolicy takes the event payload from awsAPIGateway and a connect to eks to delete the target pods specified in the event.    
-def podDeletePolicy(obj, v1):
+def podDeletePolicy(obj, api):
+    v1 = client.CoreV1Api(api)
     for i in obj["targets"]:
+        #Parse name string and assign required values
         n = i["name"].split(":")
-        print("Target: ", n[3])
-        resp = v1.delete_namespaced_pod(n[3], n[2])
+        namespace = n[2]
+        pod = n[3]
+        print("Target: ", pod)
+        resp = v1.delete_namespaced_pod(pod, namespace)
         #print(resp)
+
+#rollbackDeploymentPolicy
+def rollbackDeploymentPolicy(obj, api):
+    api_instance = client.AppsV1beta1Api(api)
+    for i in obj["targets"]:
+        #Parse name string and assign required values
+        n = i["name"].split(":")
+        namespace = n[2]
+        deployment = n[4]
+        print("Target: ", deployment)
+        resp = api_instance.create_namespaced_deployment_rollback(deployment, namespace)
+        #print(resp)
+
 
 #printContent takes an event from apiGateway and prints it to the screen
 def printContent(obj):
@@ -98,6 +115,7 @@ options = {
     "demoApplicationCPU": podDeletePolicy,
     "demoApplicationMemory": podDeletePolicy,
     "New Relic Alert - Test Policy": podDeletePolicy,
+    "remediationDemoPolicy": rollbackDeploymentPolicy
 }
     
  
@@ -134,8 +152,7 @@ def handler(event, context):
     #server communication, and is invariant across implementations.
     api = client.ApiClient(configuration)
     v1 = client.CoreV1Api(api)
-    api_instance = client.AppsV1beta1Api(api)
-    api_instance.create_namespaced_deployment_rollback()
+
  
     
     # Get all the pods in a specific name space
@@ -158,7 +175,7 @@ def handler(event, context):
     #DELETING PODS ON ALERT
     print(DPODS.center(50, '*'))
     name = event["policy_name"]
-    options[name](event, v1)
+    options[name](event, api)
     print(DPODS.center(50, '*'))
 
     #time delay to better show deleted pods
