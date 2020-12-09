@@ -96,8 +96,9 @@ def rollbackDeploymentPolicy(obj, api):
         n = i["name"].split(":")
         namespace = n[2]
         deployment = n[4]
+        body = client.AppsV1beta1DeploymentRollback()
         print("Target: ", deployment)
-        resp = api_instance.create_namespaced_deployment_rollback(deployment, namespace)
+        resp = api_instance.create_namespaced_deployment_rollback(deployment, namespace, body)
         #print(resp)
 
 
