@@ -20,8 +20,8 @@ REGION = 'us-east-2'
 
 
 #PRINT OUT FOR STATUS OF PODS
-PPODS="RUNNING PODS"
-DPODS="DELETING PODS IN PROGRCESS ..."
+PPODS="DISPLAYING PODS"
+DPODS="DEPLOYMENT ROLLBACK IN PROGRESS..."
 
 # We assume that when the Lambda container is reused, a kubeconfig file exists.
 # If it does not exist, it creates the file.
@@ -96,16 +96,20 @@ def rollbackDeploymentPolicy(obj, api):
         n = i["name"].split(":")
         namespace = n[2]
         deployment = n[4]
-        body = client.AppsV1beta1DeploymentRollback()
+
+        #Parse deployment name to remove suffix
+        n = deployment.split("-")
+        deployment = n[0]+"-"+n[1]+"-"+n[2]
+        body = client.AppsV1beta1DeploymentRollback(None,None,deployment, client.AppsV1beta1RollbackConfig())
         print("Target: ", deployment)
         resp = api_instance.create_namespaced_deployment_rollback(deployment, namespace, body)
-        #print(resp)
+        print(resp)
 
 
 #printContent takes an event from apiGateway and prints it to the screen
 def printContent(obj):
     for i in obj.keys():
-        print(obj[i])
+        print(i, ": ",obj[i])
 
 
 #Dict to act as switch statement using policy names as keys and remediation functions as values
@@ -125,7 +129,21 @@ options = {
 
 def handler(event, context):
 
-     
+    #check if issue has already been closed
+    if event["current_state"] == "closed":
+        print("Issue already closed")
+        return {
+        'statusCode': 200,
+        'body': json.dumps('Issue already closed')
+    }
+
+    #check if issue has already been closed
+    if event["current_state"] == "closed":
+        print("Issue already closed")
+        return {
+        'statusCode': 200,
+        'body': json.dumps('Issue already closed')
+    }
     # Get bearer token hash 
     eks = auth.EKSAuth(CLUSTER_NAME)
     token = eks.get_token()
@@ -181,8 +199,6 @@ def handler(event, context):
 
     #time delay to better show deleted pods
     time.sleep(4)
-
-    
     
     #Print pods to log to demonstrate target pods are gone.
     print(PPODS.center(50, '*'))
