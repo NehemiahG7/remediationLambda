@@ -86,24 +86,50 @@ def podDeletePolicy(obj, api):
         pod = n[3]
         print("Target: ", pod)
         resp = v1.delete_namespaced_pod(pod, namespace)
-        #print(resp)
+        print(resp)
 
 #rollbackDeploymentPolicy
 def rollbackDeploymentPolicy(obj, api):
-    api_instance = client.AppsV1beta1Api(api)
-    for i in obj["targets"]:
-        #Parse name string and assign required values
-        n = i["name"].split(":")
-        namespace = n[2]
-        deployment = n[4]
+    #check if alert has been duplicated
+    if getLabels(obj, api) == "v1":
+        print("Duplicate alert")
+        return
 
-        #Parse deployment name to remove suffix
-        n = deployment.split("-")
-        deployment = n[0]+"-"+n[1]+"-"+n[2]
-        body = client.AppsV1beta1DeploymentRollback(None,None,deployment, client.AppsV1beta1RollbackConfig())
-        print("Target: ", deployment)
-        resp = api_instance.create_namespaced_deployment_rollback(deployment, namespace, body)
-        print(resp)
+    api_instance = client.AppsV1beta1Api(api)
+    #Parse name string and assign required values
+    n = obj["targets"][0]["name"].split(":")
+    namespace = n[2]
+    deployment = n[4]
+
+    #Parse deployment name to remove suffix
+    n = deployment.split("-")
+    deployment = n[0]+"-"+n[1]+"-"+n[2]
+    body = client.AppsV1beta1DeploymentRollback(None,None,deployment, client.AppsV1beta1RollbackConfig())
+    print("Target: ", deployment)
+    resp = api_instance.create_namespaced_deployment_rollback(deployment, namespace, body)
+    print(resp)
+
+#getLabels to filter out duplicate alerts for demo
+def getLabels (obj, api):
+    con = client.CoreV1Api(api)
+    ret = con.list_namespaced_pod("demo")
+    v1 = 0
+    v2 = 0
+    for i in ret.items:
+        print(i.metadata.labels["version"])
+        version = i.metadata.labels["version"]
+        if version == "v1":
+            v1 += 1
+        elif version == "v2":
+            v2 += 1
+        else:
+            print("Unrecognized version", version)
+    if v1 == 2:
+        return "v1"
+    if v2 == 2:
+        return "v2"
+    
+
 
 
 #printContent takes an event from apiGateway and prints it to the screen
@@ -120,7 +146,8 @@ options = {
     "demoApplicationCPU": podDeletePolicy,
     "demoApplicationMemory": podDeletePolicy,
     "New Relic Alert - Test Policy": podDeletePolicy,
-    "remediationDemoPolicy": rollbackDeploymentPolicy
+    "remediationDemoPolicy": rollbackDeploymentPolicy,
+    "getLabels": getLabels
 }
     
  
@@ -196,15 +223,6 @@ def handler(event, context):
     name = event["policy_name"]
     options[name](event, api)
     print(DPODS.center(50, '*'))
-
-    #time delay to better show deleted pods
-    time.sleep(4)
-    
-    #Print pods to log to demonstrate target pods are gone.
-    print(PPODS.center(50, '*'))
-    for i in ret.items:
-        print("%s\t%s\t%s" % (i.status.pod_ip, i.metadata.namespace, i.metadata.name))
-    print(PPODS.center(50, '*'))
     
     
     return {
