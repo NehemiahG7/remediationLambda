@@ -13,68 +13,14 @@ import time
 #Location of kubeconfig file inside lambda 
 KUBE_FILEPATH = '/tmp/kubeconfig'
   
-
 # Configure your cluster name and region here
-CLUSTER_NAME = 'eks-newrelic-cluster'
-REGION = 'us-east-2'
-
+CLUSTER_NAME = ''
+REGION = ''
+kube_content = dict()
 
 #PRINT OUT FOR STATUS OF PODS
 PPODS="DISPLAYING PODS"
 DPODS="DEPLOYMENT ROLLBACK IN PROGRESS..."
-
-# We assume that when the Lambda container is reused, a kubeconfig file exists.
-# If it does not exist, it creates the file.
-if not os.path.exists(KUBE_FILEPATH):
-    kube_content = dict()
-    
-    
-    # Get data from EKS API
-    eks_api = boto3.client('eks',region_name=REGION)
-    cluster_info = eks_api.describe_cluster(name=CLUSTER_NAME)
-    
-    
-    #fetches certificate from eks api
-    certificate = cluster_info['cluster']['certificateAuthority']['data']
-    endpoint = cluster_info['cluster']['endpoint']
-    
-    
-    # Generating kubeconfig
-    kube_content = dict()
-    kube_content['apiVersion'] = 'v1'
-    kube_content['clusters'] = [
-        {
-        'cluster':
-            {
-            'server': endpoint,
-            'certificate-authority-data': certificate
-            },
-        'name':'kubernetes'        
-        }]
-    kube_content['contexts'] = [
-        {
-        'context':
-            {
-            'cluster':'kubernetes',
-            'user':'aws'
-            },
-        'name':'aws'
-        }]
-    kube_content['current-context'] = 'aws'
-    kube_content['Kind'] = 'config'
-    kube_content['users'] = [
-    {
-    'name':'aws',
-    'user':'lambda'
-    }]
-
-
-    # create kubeconfig file in kube_content object
-    #the write to '/tmp/kubeconfig' the contents of kube_content, the location is inside the lambda function
-    #Write out the yaml configuration file to /tmp since lambda is read-only
-    with open(KUBE_FILEPATH, 'w') as outfile:
-        yaml.dump(kube_content, outfile, default_flow_style=False)
-
 
 #podDeletePolicy takes the event payload from awsAPIGateway and a connect to eks to delete the target pods specified in the event.    
 def podDeletePolicy(obj, api):
@@ -97,7 +43,7 @@ def rollbackDeploymentPolicy(obj, api):
 
     api_instance = client.AppsV1beta1Api(api)
     #Parse name string and assign required values
-    n = obj["targets"][0]["name"].split(":")
+    n = getName(obj)
     namespace = n[2]
     deployment = n[4]
 
@@ -128,6 +74,9 @@ def getLabels (obj, api):
         return "v1"
     if v2 == 2:
         return "v2"
+
+def getName(obj):
+    return obj["targets"][0]["name"].split(":")
     
 
 
@@ -164,14 +113,66 @@ def handler(event, context):
         'body': json.dumps('Issue already closed')
     }
 
-    #check if issue has already been closed
-    if event["current_state"] == "closed":
-        print("Issue already closed")
-        return {
-        'statusCode': 200,
-        'body': json.dumps('Issue already closed')
-    }
-    # Get bearer token hash 
+    # Config cluster name and region
+    global CLUSTER_NAME
+    CLUSTER_NAME = getName(event)[1]
+    global REGION
+    REGION = event["region"]
+
+    # We assume that when the Lambda container is reused, a kubeconfig file exists.
+    # If it does not exist, it creates the file.
+    if not os.path.exists(KUBE_FILEPATH):
+        global kube_content
+        print("In KUBE_FILEPATH")
+        
+        
+        # Get data from EKS API
+        eks_api = boto3.client('eks',region_name=REGION)
+        cluster_info = eks_api.describe_cluster(name=CLUSTER_NAME)
+        
+        
+        #fetches certificate from eks api
+        certificate = cluster_info['cluster']['certificateAuthority']['data']
+        endpoint = cluster_info['cluster']['endpoint']
+        
+        
+        # Generating kubeconfig
+        kube_content = dict()
+        kube_content['apiVersion'] = 'v1'
+        kube_content['clusters'] = [
+            {
+            'cluster':
+                {
+                'server': endpoint,
+                'certificate-authority-data': certificate
+                },
+            'name':'kubernetes'        
+            }]
+        kube_content['contexts'] = [
+            {
+            'context':
+                {
+                'cluster':'kubernetes',
+                'user':'aws'
+                },
+            'name':'aws'
+            }]
+        kube_content['current-context'] = 'aws'
+        kube_content['Kind'] = 'config'
+        kube_content['users'] = [
+        {
+        'name':'aws',
+        'user':'lambda'
+        }]
+
+
+        # create kubeconfig file in kube_content object
+        #the write to '/tmp/kubeconfig' the contents of kube_content, the location is inside the lambda function
+        #Write out the yaml configuration file to /tmp since lambda is read-only
+        with open(KUBE_FILEPATH, 'w') as outfile:
+            yaml.dump(kube_content, outfile, default_flow_style=False)
+
+    # Get bearer token hash
     eks = auth.EKSAuth(CLUSTER_NAME)
     token = eks.get_token()
     
